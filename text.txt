@@ -1,0 +1,503 @@
+项目接口文档
+https://www.showdoc.cc/414855720281749?page_id=3678621017219602
+
+
+
+1:项目搭建
+	hBuildX 创建uni-app项目
+	配置mainfest.json里面微信相关配置  微信小程序Appid
+2：配置tabbar页面
+	home horizontal	video	search	mine
+	page.json里面配置navigationBarTitleText属性
+	
+	配置tabbar
+	static里面存放tabbar用到的图标，配置iconPath/selectedIconPath
+3:配置globalStyle属性
+4：引入字体图标iconfont,全局样式文件base.wxss  放在根目录下  全局应用
+在App.vue中全局引用  @import "./styles/iconfont.wxss";
+	微信小程序不只支持 *通配符  所以base.wxss里面没有用*
+5:uni-app使用
+		本项目没有使用uni-ui模板创建项目，所以所有的uni-ui组件都需要后引入
+		在项目中需要单独引入，在官网中使用HBuildX导入插件后，可以直接使用。不需要import导入和注册
+6：uni-api使用
+	原生的微信小程序的api都不支持promise
+	uni-app对大部分的小程序的原生api做了封装，让其支持promise
+	uni-app的请求返回值是个数组，不方便使用
+	
+	
+	
+首页功能分析
+	1：修改导航栏的外观
+		pages.json	globalStyle
+	2：使用分段器搭建子页面
+		首页模块分4个部分，分别为推荐、分类、最先、专辑
+			在pages下面的home目录下创建新的页面，pages.json中同步修改
+			在home中import导入components中注册，作为组件使用
+			使用uni-ui中的分段器实现标签栏的选择uni-segmented-control（不用导入注册）
+			map函数。把items做成一个数组对象，方便后续使用
+			style-type修改为text
+			v-if成立时候显示对应的组件
+			onClickItem函数实现点击切换
+			
+		样式布局
+		首页view 的class = home_tab
+		选项卡+搜索为title  在class=home_tab_title的view中
+		选项卡在class="title_inner"的view中
+		搜索在class="iconfont iconsearch"的view中
+		下面类容在class="home_tab_content"的view中
+		
+			.home_tab{
+			.home_tab_title{
+				
+				.title_inner{
+					
+				}
+				.iconsearch{
+					
+				}
+			}
+			.home_tab_content{
+				
+			}
+		}
+		
+		home_tab_title相对定位，iconsearch绝对定位
+		.title_inner{
+			width: 60%;
+			margin: 0 auto;
+		}
+		.iconsearch{
+			position: absolute;
+			top: 50%;
+			transform: translateY(-50%);
+			right: 5%;
+		}
+	3：封装自己的异步请求
+		基于原生promise来封装
+		挂载在Vue的原型上
+		通过this.request的方式来使用
+		
+		//es6
+	export default (params)=>{
+		uni.showLoading({
+			title:"加载中"
+		})
+		return new Promise((resolve,reject)=>{
+			wx.request({
+				...params,
+				success(res){
+					resolve(res.data);
+				},
+				fail(err){
+					reject(err);
+				},
+				complete() {
+					uni.hideLoading();
+				}
+			})
+		})
+	}
+
+	在main.js中引入这个函数 然后挂载到原型上面
+
+	首页发送请求（接口文档中）url:'http://157.122.54.189:9088/image/v3/homepage/vertical',
+	参数：
+		//要获取多少数据
+		limit:30,
+		//关键字
+		order:"hot",
+		skip:0
+	，得到数据后队数据进行渲染
+	<image mode="widthFix" :src="item.thumb"></image>
+	mode  *********
+	请求返回的数据是一个对象，里面有推荐，月份，热门三部分数据。分别去取来进行数据渲染
+
+	对热门数据进行处理。热门数据第一次只取了30条。实际不止 ，需要到底刷新从新获取
+	用到uni-app的scroll-view组件下拉到底部从新发送请求
+	接口参数取出来放到data里面作为参数传进去
+	params:{
+		limit:30,
+		order:"hot",
+		skip:0
+	},
+	获取数据的请求封装为方法getList在methiods中，在onLoad中调用this.getList（）
+
+	this.reqest({
+		url:'http://157.122.54.189:9088/image/v3/homepage/vertical',
+		data:this.params
+	}).then(result=>{
+			//推荐模块
+			this.recommends = result.res.homepage[1].items;
+			//月份模块
+			this.monthes = result.res.homepage[2];
+			//将时间戳改为对应时间
+			this.monthes.MM = moment(this.monthes.stime).format("MM");
+			this.monthes.DD = moment(this.monthes.stime).format("DD");
+			//console.log(this.monthes)
+		
+		//热门模块
+		//数组拼接
+		this.hots = result.res.vertical;
+	})
+	参数用data:this.params
+	下拉到里布调用scroll-view的@scroll方法。里面再次调用getList方法
+	this.params.skip += this.params.limit;
+	获取需要跳过的条目
+	从新获取的数据需要对热门数据处理，使用es6的数组合并[...a1,...a2]把a1数组，a2数组合并为一个数组
+	this.hots = [...this.hots,...result.res.vertical];
+	需要注意，除了热门数据其他数据不用重新获取，所以可以判断推荐数据的长度是否为0
+	只有第一次获取数据的时候的长度为0，剩下时候都不为0.所以不用从新获取
+	同理解决渲染时候时间为undefine问题。用v-if="recommends.length > 0"
+	判断热门数据获取结束，不再发请求，在data里面放一个hasmore参数，初始值设置为false
+	在队获取结果处理时候result.res.vertical.length === 0，说明获取结束了
+	设置
+	this.hasMore = true;
+	return;
+	在触底发送请求时候没出都判断this.hasMore是否为true否则不发请求，并且不发请求弹出提示框用uni.showToast
+	使用uni.showToast时候必须这种icon:"null"
+
+
+
+
+专辑页面功能分析
+	1：动态修改页面标题
+		uni.setNavigationBarTitle(OBJECT)
+		在mounted中调用，页面挂载成功就直接被调用
+	2：数据请求，和推荐页面一样，请求参数放在data里面。封装请求方法在mounted里面调用
+	
+		banner数据拿到。使用轮播图来处理swiper
+			处理图片高度问题，高度宽度相对一样
+				swiper默认高度 150px
+				image默认宽度320px  我们重置为100%
+				默认高度240px
+			swiper标签高度不能被图片撑开
+			计算图片高度宽度比例
+			把图片宽高比例写到swiper样式中
+			imgae继承swiper的高度
+			
+	3：点击进入专辑详情页面
+		把循环渲染的item标签修改为navigator，给定一个url="/pages/album/album"
+		需要注意的是这个地方url应用内的跳转链接，值为相对路径或绝对路径，如："../first/first"，"/pages/first/first"，注意不能加 .vue 后缀
+		
+		点击进入详情页面带参数
+		url中加id  es5  es6
+		:url="`/pages/album/album?id=${item.id}`"
+	数据渲染
+		下拉触底加载数据onReachBottom
+		
+超链接组件封装
+	1：goDetail.vue组件创建 里面放一个solt插槽
+	2:在home导入组件，注册组件
+	3:把月份的图片用组件包起来，slot作用
+		专辑详情里面列表图标也用goDetail包起来可以点击跳转进入图片详情页面
+	4：组件传参  把月份图片，索引传递给组件
+	5:组件中用props接受参数，组件挂载后可以得到传递过来的参数
+	6：缓存数据
+		getApp().globalData.imgList = this.list;
+		getApp().globalData.imgIndex = this.index;
+	7：点击组件跳转页面
+		在组件页面给容器一个点击事件handelClick
+	8：点击后uni.navigateTo实现跳转
+		uni.navigateTo({
+			url:"/pages/imgDetail/imgDetail"
+		})
+	9：进入图片详情页面后，获取缓存的数据
+		onLoad中获取getApp().globalData
+		
+图片详情页面
+	在这个页面的数据都是goDetail.vue组件中缓存在全局中的数据
+	在imgDetail.vue的OnLoad阶段获取数据后
+	const {imgIndex，imgList} = getApp().globalData;
+	this.imgIndex = imgIndex;
+	this.imgDetail = imgList[this.imgIndex];
+	需要注意的是，在保存到小程序内存中时候，保存了两个对象，一个是imgIndex索引，一个是imgList数组
+	
+	在图片详情页面，每一张图片都对应不同的评论。所以每一张图片都要单独处理
+	通过索引和图片数组列表就可以确认每一张图片
+	在imgDetail中可以去取图片详情信息页面的上半部分信息，包括图片，姓名，时间点赞数等。还可以获取每一张图片的ID信息，
+	然后再通过后台给的接口获取每一张的评论信息
+	
+	getComments(id){
+		this.request({
+			url:`http://157.122.54.189:9088/image/v2/wallpaper/wallpaper/${id}/comment`
+		}).then(result=>{
+			console.log(result);
+			/* if(!result.res.album && result.res.hot.length === 0 &&result.res.comment.length === 0){
+				uni.showToast({
+					title:"没有相关评论!",
+					icon:"none"
+				});
+				return;
+			} */
+			this.album = result.res.album;
+			this.hot = result.res.hot;
+			this.comment = result.res.comment;
+			
+			result.res.hot.forEach(
+				v => (v.cnTime = moment(v.atime * 1000).fromNow())
+			);
+			result.res.comment.forEach(
+				v => (v.cnTime = moment(v.atime * 1000).fromNow())
+			);
+		})
+	}
+		
+	然后通过id获取的评论信息来进行渲染
+	需要注意的是，并不是每一张图片都有热门评论，最新评论和评论。所以渲染需要判断是否有这部分
+	
+	到此点击每一张图片都可以看到详情信息了。有一个需求是，在详情页面可以滑动翻看
+	这就和之前进来详情页面是通过两个值获取的有关系了，一个是索引一个数数组
+	所以在详情页面我们可以通过右滑让索引加加，左滑让索引减减来表示不同 的图片，已经获取相应的评论
+	
+		1：第一步先封装一个手指滑动组件。把图片详情页面的上面大图用组件包裹起来，让后让其滑动触发事件
+		
+		swiperAction.vue
+		/*
+		1:给容器绑定两个 触屏事件
+		2：用户按下屏幕事件
+			1：计入按下屏幕的时间   Data.now()
+			2：记录按下屏幕的坐标
+		3：用户离开屏幕事件
+			1：记录离开屏幕的时间  Data.now()
+			2：记录离开屏幕的坐标
+		4：更具两个时间判断按下屏幕时间是否合法
+		5：计算坐标距离 判断是否合法 判断滑动方向
+		*/
+		
+		在图片详情页面中，
+		<swiper-action @swiperAction="handelSwiperAction">
+			<image :src="imgDetail.newThumb"></image>
+		</swiper-action>
+		handelSwiperAction就是来做判断是否显示下一张图片还是上一张图片
+		
+		*******这就涉及到一个子组件调用父组件中的方法
+		$emit子组件调用父组件的方法并传递数据
+		
+		在swiperAction.vue中写上
+		if(Math.abs(this.endX - this.startX) >10 && Math.abs(this.endY - this.startY)<10){
+			//判断滑动方向
+			this.direction = this.endX - this.startX > 0 ? "right" : "left";
+		}else{
+			return;
+		}
+		this.$emit("swiperAction",{direction:this.direction});
+		
+		在图片详情页面的handelSwiperAction方法中获取是左滑还是右滑
+		handelSwiperAction(e){
+				console.log(e)
+				/*
+				 1 用户 左滑  imgIndex++
+				 2 用户 右滑 imgIndex--
+				 3 不能无限制滑动 判断 数组是否越界
+				 4 左滑 e.direction == "left"&& this.imgIndex < this.imgList.length-1
+				 5 右滑 e.direction == "right"&& this.imgIndex > 0
+				*/
+			   const {imgList} = getApp().globalData;
+			   
+			   if(e.direction === "left" && this.imgIndex < imgList.length-1){
+				   this.imgIndex++;
+				   this.getData();
+			   }else if(e.direction === "right"&& this.imgIndex > 0){
+				   this.imgIndex--;
+				   this.getData();
+			   }else{
+				   uni.showToast({
+				   	title:"没有更多数据了",
+					icon:"none"
+				   })
+			   }
+			}
+		在this.getData()中每一次都要获取评论数据
+		//获取评论
+		this.getComments(this.imgDetail.id);
+		
+		getComments(id){
+			this.request({
+				url:`http://157.122.54.189:9088/image/v2/wallpaper/wallpaper/${id}/comment`
+			}).then(result=>{
+				console.log(result);
+				/* if(!result.res.album && result.res.hot.length === 0 &&result.res.comment.length === 0){
+					uni.showToast({
+						title:"没有相关评论!",
+						icon:"none"
+					});
+					return;
+				} */
+				this.album = result.res.album;
+				this.hot = result.res.hot;
+				this.comment = result.res.comment;
+				
+				result.res.hot.forEach(
+					v => (v.cnTime = moment(v.atime * 1000).fromNow())
+				);
+				result.res.comment.forEach(
+					v => (v.cnTime = moment(v.atime * 1000).fromNow())
+				);
+			})
+		}
+		
+		获取到的评论数据，没一条数据的时间都要出来yong forEach函数来处理
+		
+		图片详情页面还有一个图片下载功能，点击后对图片下载
+		在getDate()中获取到的imgDetail都存放在了data中，所以可以直接获取到url:this.imgDetail.img
+		//下载图片
+			async handelDownload(){
+				//uni.downloadFile
+				//uni.saveImageToPhotosAlbum
+				
+				await uni.showLoading({
+					title:"下载中"
+				})
+				
+				//1:将远程文件下载到小程序中
+				const result1 = await uni.downloadFile({
+					url:this.imgDetail.img
+				})
+				const {tempFile} = result1[1];
+				
+				//将小程序内存中临时文件保存到本地
+				
+				const result2 = await uni.saveImageToPhotosAlbum({
+					filePath:tempFile
+				})
+				//console.log(result2);
+				
+				//提示用户下载成功
+				uni.hideLoading();
+				await uni.showToast({
+					title:"下载成功"
+				})
+			}
+		使用//uni.downloadFile
+			//uni.saveImageToPhotosAlbum
+			两个方法就可以下载  async  await的使用
+			
+视频页面功能分析
+	1：使用分段器搭建子页面
+		首页模块分4个部分，分别为推荐、娱乐、最新、热门、分类
+		
+		在此页面前面四个页面样式都是样的，只又分类页面样式不一样
+		左右子组件不需要创建5个，只用创建2个就可以了
+			在pages下面的home目录下创建新的页面，pages.json中同步修改
+			在home中import导入components中注册，作为组件使用
+			使用uni-ui中的分段器实现标签栏的选择uni-segmented-control（不用导入注册）
+			map函数。把items做成一个数组对象，方便后续使用
+			style-type修改为text
+			v-if成立时候显示对应的组件
+			onClickItem函数实现点击切换（v-if="current < 4显示第一个组件）否则显示第二个组件
+			
+			<view v-if="current < 4">
+				<video-main :urlobj="{url:items[current].url,params:items[current].params}"></video-main>
+			</view>
+			默认current：0进去显示推荐页面。参数传递，在item中
+			items: [
+				{title:"推荐",url:"http://157.122.54.189:9088/videoimg/v1/videowp/featured",params:{limit:30,skip:0,order:"hot"}},
+				{title:"娱乐",url:"http://157.122.54.189:9088/videoimg/v1/videowp/category/59b25abbe7bce76bc834198a",params:{limit:30,skip:0,order:"new"}},
+				{title:"最新",url:"http://157.122.54.189:9088/videoimg/v1/videowp/videowp",params:{limit:30,skip:0,order:"new"}},
+				{title:"热门",url:"http://157.122.54.189:9088/videoimg/v1/videowp/videowp",params:{limit:30,skip:0,order:"hot"}},
+				{title:"分类",url:"http://157.122.54.189:9088/videoimg/v1/videowp/category",params:{}}
+			],
+			把请求的地址和参数都传到子组件中，然后用props来接受
+			Props接受的是一个对象urlobj:Object
+			在子组件的mounted阶段就对数据进行获取
+			同时还需要完成分页加载功能，
+			
+			有一个问题。mounted完成后，参数获取就不会改变了，为了实现点击获取不同参数，需要使用watch方式来监听
+			watch:{
+				urlobj(){
+					//console.log("参数发送变化了")
+					//console.log(this.urlobj)
+					this.getList();
+				}
+			}
+			分页加载是使用的数组拼接方式，每一次切换点击后需要把数组清空，skip重新置0
+			左右在watch中每一次调用都需要this.videowp = [];
+			因为每一次调用watch都需要重新获取传递过来的参数，在参数里面已经写了skip为0.不需要在次重写
+			
+			获取数据渲染
+			<scroll-view scroll-y="true" enable-flex="true" class="video_main" @scrolltolower="handelToLower">
+				<view
+				class="video_item"
+				v-for="item in videowp"
+				:key="item.id"
+				@click="handelToVideo(item)"
+				>
+					<image mode="widthFix" :src="item.img"></image>
+				</view>
+			</scroll-view>
+			
+			<style lang="scss" scoped>
+			
+			.video_main{
+					display: flex;
+					flex-wrap: wrap;
+					height: calc(100vh - 36px);
+					.video_item{
+						width: 33.33%;
+						border: 5rpx solid #FFFFFF;
+						image{
+							
+						}
+					}
+				}
+			</style>
+			
+			enable-flex="true"解决不在一行显示
+			
+			
+			handelToVideo点击实现到视频播放页面
+			handelToVideo(item){
+				//1:数据存储到全局共享
+				//2:页面跳转
+				
+				getApp().globalData.video = item;
+				uni.navigateTo({
+					url:"/pages/videoPlay/index"
+				})
+			}
+			把数据全局缓存后，进入页面后再拿出来渲染
+			
+			在视频播放页面数据渲染实现静音 分享  下载功能即可
+			下载视频和下载图片类似
+			async await 使用
+			uni.downloadFile
+			uni.saveVideoToPhotosAlbum
+			
+			<view @click="handelMuted" :class="['iconfont',muted?'iconjingyin':'iconshengyin']"></view>
+			声音图标
+			handelMuted(){
+				this.muted = !this.muted;
+			}
+			muted只需要绑定到视频上就可以
+			<video :muted="muted" :src="videoObj.video" objectFit="fill"></video>
+			objectFit="fill"解决视频没有铺满
+			点击分享按钮实现
+			open-type="share"
+			让button全透明就可以
+			<view class="iconfont iconzhuanfa">
+				<button open-type="share" class="btn"></button>
+			</view>
+			.iconzhuanfa{
+				position: relative;
+				.btn{
+					position: absolute;
+					width: 100%;
+					height: 100%;
+					opacity: 0;
+				}
+			}
+			
+			背景图
+			image{
+				position: absolute;
+				width: 100vh;
+				height: 100vh;
+				z-index: -1;
+				filter: blur(20px);
+			}
+			z-index:-1
+			滤镜效果
+			
+每天进步一点点
+			
+			
